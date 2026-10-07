@@ -27,9 +27,9 @@ lives in the tray.
 | Pump mode | Quiet, Balanced or Extreme for the AIO pump. |
 | Profiles | Save any number of lighting and fan setups, copy them, rename them, and export or import them as files. |
 | Automatic switching | Rules switch profile while a reading is high (CPU load over 80%) or a program is running (`wow.exe`), and switch back when it stops. |
-| Fan safety | A floor no curve can go below, a fast failsafe speed for any fan whose sensor goes quiet, gentle ramp-downs, and a safe speed left behind when Prism exits. |
+| Fan safety | A floor no curve can go below, a fast failsafe speed for any fan whose sensor goes quiet, gentle ramp-downs, a default Balanced curve for any fan a profile leaves out, and a safe speed left behind when Prism exits. A fault in lighting or a sensor never stops the fans being driven. |
 | Tray | Switch profile or pause rules from the tray without opening the window. Closing the window keeps Prism running. |
-| Reconnects | A device that drops off USB is shown as offline, retried every ten seconds, and given its settings again when it returns. |
+| Reconnects | A device that drops off USB is shown as offline, retried every ten seconds, and given its settings again when it returns. After suspend every device is reopened and set up again, since they wake in their power-on state. |
 
 ![The lighting page, editing a rainbow wave on six fans](media/prism-lighting.png)
 
@@ -90,7 +90,8 @@ The code follows a ports and adapters layout:
   resets them, and the AIO can drop off USB altogether. Settings > Hardware > *Hide them* turns those
   detectors off in OpenRGB's configuration and keeps a backup of the old file beside it.
 - **Do not open the OpenRGB window while Prism runs.** It reinitialises every controller. Prism starts a
-  hidden OpenRGB server on its own when it needs one.
+  hidden OpenRGB server on its own when it needs one. Detection takes a while, so the RAM and GPU show as
+  offline for the first half minute or so; Prism carries on driving the fans meanwhile.
 - **Fan curves need Prism running.** The Commander Pro has no temperature probes plugged in, so Prism reads the
   sensors and sets the duty. When Prism exits it leaves every fan at the *Speed when Prism closes* setting.
 
