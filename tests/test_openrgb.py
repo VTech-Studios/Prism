@@ -112,15 +112,17 @@ def test_client_failures_become_device_errors() -> None:
 def test_detectors_are_switched_off_with_a_backup(tmp_path: Path) -> None:
     path = tmp_path / "OpenRGB.json"
     path.write_text(json.dumps({"Detectors": {"detectors": {"Corsair Commander Pro": True, "ENE": True}}}))
-    detectors = OpenRgbDetectors(path)
-    assert not detectors.disabled(["Corsair Commander Pro"])
-    detectors.disable(["Corsair Commander Pro", "Corsair Hydro H115i Platinum"])
+    detectors = OpenRgbDetectors(["Corsair Commander Pro", "Corsair Hydro H115i Platinum"], path)
+    assert not detectors.is_off()
+    detectors.turn_off()
     saved = json.loads(path.read_text())["Detectors"]["detectors"]
     assert saved == {"Corsair Commander Pro": False, "ENE": True, "Corsair Hydro H115i Platinum": False}
-    assert detectors.disabled(["Corsair Commander Pro"])
+    assert detectors.is_off()
     assert path.with_suffix(".json.prism-backup").exists()
 
 
 def test_detectors_need_a_readable_config(tmp_path: Path) -> None:
+    detectors = OpenRgbDetectors(["x"], tmp_path / "missing.json")
+    assert not detectors.is_off()
     with pytest.raises(DeviceError):
-        OpenRgbDetectors(tmp_path / "missing.json").disabled(["x"])
+        detectors.turn_off()

@@ -109,3 +109,9 @@ def test_close_releases_the_transport(hwmon: Path) -> None:
 def test_find_hwmon(hwmon: Path) -> None:
     assert find_hwmon("corsaircpro", hwmon.parent) == hwmon
     assert find_hwmon("nothing", hwmon.parent) is None
+
+
+def test_without_the_kernel_driver_there_are_no_fans() -> None:
+    fans = HwmonFans(None)
+    assert fans.connected() == []
+    assert fans.rpm(1) is None

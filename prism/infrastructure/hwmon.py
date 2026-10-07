@@ -25,7 +25,8 @@ def find_hwmon(name: str, root: Path = HWMON_ROOT) -> Path | None:
 class HwmonFans:
     """Reads fan speeds the kernel already polls, so Prism never competes with it for the device."""
 
-    def __init__(self, directory: Path) -> None:
+    def __init__(self, directory: Path | None) -> None:
+        """@param directory: the driver's hwmon directory, or None if the kernel driver is not loaded."""
         self._directory = directory
 
     def connected(self) -> list[int]:
@@ -35,6 +36,8 @@ class HwmonFans:
 
         @return: the header numbers, counting from 1.
         """
+        if self._directory is None:
+            return []
         found = (_FAN_LABEL.fullmatch(path.name) for path in self._directory.glob("fan*_label"))
         return sorted(int(match.group(1)) for match in found if match)
 
@@ -44,6 +47,8 @@ class HwmonFans:
         @param header: the header number, counting from 1.
         @return: the speed in RPM, or None if it could not be read.
         """
+        if self._directory is None:
+            return None
         try:
             return int((self._directory / f"fan{header}_input").read_text().strip())
         except (OSError, ValueError):

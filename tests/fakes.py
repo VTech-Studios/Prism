@@ -187,11 +187,14 @@ class FakeFans:
 
 
 class FakeSensors:
-    def __init__(self, readings: dict[str, float] | None = None) -> None:
+    def __init__(
+        self, readings: dict[str, float] | None = None, names: dict[str, tuple[str, str]] | None = None
+    ) -> None:
         self.readings = readings if readings is not None else {"cpu.temp": 40.0, "cpu.load": 10.0}
+        self.names = names or {}
 
     def sensors(self) -> Sequence[Sensor]:
-        return [Sensor(key, key, "") for key in self.readings]
+        return [Sensor(key, *self.names.get(key, (key, ""))) for key in self.readings]
 
     def read(self) -> Mapping[str, float]:
         return dict(self.readings)

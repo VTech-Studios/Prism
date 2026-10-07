@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .domain.automation import Rule
@@ -162,6 +163,39 @@ class SettingsStore(Protocol):
         """Keep the settings for next time.
 
         @param settings: the settings.
+        """
+        ...
+
+
+class ProfileFiles(Protocol):
+    def export(self, profile: Profile, path: Path) -> None:
+        """Write a profile to a file, to back it up or share it.
+
+        @param profile: the profile.
+        @param path: where to write it.
+        @raise PrismError: if the file cannot be written.
+        """
+        ...
+
+    def read(self, path: Path) -> Profile:
+        """Read a profile someone exported.
+
+        @param path: the file.
+        @return: the profile.
+        @raise PrismError: if the file is missing or is not a profile.
+        """
+        ...
+
+
+class DetectorSwitch(Protocol):
+    def is_off(self) -> bool:
+        """@return: whether OpenRGB already leaves the devices Prism drives alone."""
+        ...
+
+    def turn_off(self) -> None:
+        """Stop OpenRGB detecting the devices Prism drives.
+
+        @raise PrismError: if OpenRGB's configuration cannot be changed.
         """
         ...
 

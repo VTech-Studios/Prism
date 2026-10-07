@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..domain.automation import Rule
-from ..domain.errors import PrismError
+from ..domain.errors import PrismError, ValidationError
 from ..domain.profile import Profile
 from ..domain.settings import Settings
 from .codec import (
@@ -98,6 +98,24 @@ class JsonRuleStore:
     def save(self, rules: Sequence[Rule]) -> None:
         """@param rules: every rule, highest priority first."""
         self._file.write([encode_rule(rule) for rule in rules])
+
+
+class JsonProfileFiles:
+    """Profiles as standalone JSON files, in the same format Prism saves them in."""
+
+    def export(self, profile: Profile, path: Path) -> None:
+        """@raise ValidationError: if the file cannot be written."""
+        try:
+            JsonFile(path).write(encode_profile(profile))
+        except OSError as error:
+            raise ValidationError(f"cannot write {path.name}: {error}") from error
+
+    def read(self, path: Path) -> Profile:
+        """@raise ValidationError: if the file is missing or is not a profile."""
+        try:
+            return decode_profile(json.loads(path.read_text()))
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+            raise ValidationError(f"{path.name} is not a Prism profile") from error
 
 
 class JsonSettingsStore:

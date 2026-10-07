@@ -28,6 +28,7 @@ class PrismState:
     @ivar showing: the profile actually applied, which a rule may have switched to.
     @ivar rule: the name of the rule in charge, if any.
     @ivar drawn: zones Prism draws itself, rather than the device playing the effect.
+    @ivar has_pump: whether an AIO pump is connected.
     @ivar notice: the latest message for the user, paired with a counter so repeats still show.
     """
 
@@ -45,6 +46,7 @@ class PrismState:
     duties: Mapping[str, int]
     statuses: tuple[DeviceStatus, ...]
     drawn: frozenset[str]
+    has_pump: bool
     autostart: bool
     notice: tuple[int, str] | None = field(default=None)
 
@@ -152,6 +154,14 @@ class PrismCore:
             self._show(profile.name, force=True)
         self.changed = True
 
+    def edit_profile(self, name: str, change: Callable[[Profile], Profile]) -> None:
+        """Change a profile based on its latest saved version, so quick edits never undo each other.
+
+        @param name: the profile.
+        @param change: makes the edited profile from the current one.
+        """
+        self.save_profile(change(self._library.get(name)))
+
     def create_profile(self, name: str) -> None:
         """@param name: the new, empty profile's name."""
         self._library.create(name)
@@ -243,6 +253,7 @@ class PrismCore:
             duties=self._cooling.duties,
             statuses=tuple(self._registry.statuses()),
             drawn=frozenset(zone.id for zone in zones if self._lighting.is_drawn(zone.id)),
+            has_pump=bool(self._registry.pumps()),
             autostart=self._autostart.enabled(),
             notice=self._notice,
         )

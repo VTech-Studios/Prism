@@ -21,12 +21,19 @@ class RuntimeLoop:
     run between frames, and receives a fresh state whenever something changed.
     """
 
-    def __init__(self, core: PrismCore, publish: Callable[[PrismState], None]) -> None:
+    def __init__(self, core: PrismCore) -> None:
         self._core = core
-        self._publish = publish
+        self._listeners: list[Callable[[PrismState], None]] = []
         self._commands: queue.SimpleQueue[Command] = queue.SimpleQueue()
         self._running = threading.Event()
         self._thread = threading.Thread(target=self._run, name="prism-runtime", daemon=True)
+
+    def subscribe(self, listener: Callable[[PrismState], None]) -> None:
+        """Be told about every new state. Call before starting the loop.
+
+        @param listener: called on the loop's thread with each new state.
+        """
+        self._listeners.append(listener)
 
     def start(self) -> None:
         """Start the loop, which connects to the devices first."""
@@ -57,7 +64,9 @@ class RuntimeLoop:
             self._drain()
             self._guarded(PrismCore.tick)
             if self._core.changed:
-                self._publish(self._core.state())
+                state = self._core.state()
+                for listener in self._listeners:
+                    listener(state)
             period = 1.0 / self._core.settings.frame_rate
             time.sleep(max(0.0, period - (time.monotonic() - started)))
         self._guarded(PrismCore.shutdown)

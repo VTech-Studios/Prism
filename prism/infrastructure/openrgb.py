@@ -20,6 +20,7 @@ from ..domain.errors import DeviceError
 from ..domain.rendering import Frame
 
 NAME = "OpenRGB"
+CORSAIR_DETECTORS = ("Corsair Commander Pro", "Corsair Hydro H100i Platinum", "Corsair Hydro H115i Platinum")
 CONFIG_PATH = Path.home() / ".config" / "OpenRGB" / "OpenRGB.json"
 
 MODE_NAMES: Mapping[EffectKind, tuple[str, ...]] = {
@@ -276,22 +277,26 @@ class OpenRgbDetectors:
     OpenRGB never to look at them.
     """
 
-    def __init__(self, path: Path = CONFIG_PATH) -> None:
+    def __init__(self, names: Sequence[str] = CORSAIR_DETECTORS, path: Path = CONFIG_PATH) -> None:
+        """@param names: detector names exactly as OpenRGB lists them."""
+        self._names = list(names)
         self._path = path
 
-    def disabled(self, names: Sequence[str]) -> bool:
-        """@return: whether every named detector is already off."""
-        detectors = self._detectors(self._read())
-        return all(detectors.get(name) is False for name in names)
+    def is_off(self) -> bool:
+        """@return: whether every detector is already off, or False if OpenRGB has no configuration yet."""
+        try:
+            detectors = self._detectors(self._read())
+        except DeviceError:
+            return False
+        return all(detectors.get(name) is False for name in self._names)
 
-    def disable(self, names: Sequence[str]) -> None:
-        """Turn the named detectors off, keeping a copy of the old file beside it.
+    def turn_off(self) -> None:
+        """Turn the detectors off, keeping a copy of the old file beside it.
 
-        @param names: detector names exactly as OpenRGB lists them.
         @raise DeviceError: if the configuration cannot be read or written.
         """
         config = self._read()
-        self._detectors(config).update(dict.fromkeys(names, False))
+        self._detectors(config).update(dict.fromkeys(self._names, False))
         try:
             self._path.with_suffix(".json.prism-backup").write_text(self._path.read_text())
             self._path.write_text(json.dumps(config, indent=4))
