@@ -15,13 +15,16 @@ def can_play(zone: LightingZone, effect: Effect) -> bool:
     """Decide whether a device can play an effect by itself exactly as Prism would draw it.
 
     Effects that follow a sensor need Prism, and so do dimmed effects whose
-    colours the device picks itself, since there is nothing to dim.
+    colours the device picks itself, since there is nothing to dim, and effects
+    with more colours than the device can hold.
 
     @param zone: the zone.
     @param effect: the effect.
     @return: True if the device's own version is faithful.
     """
     if effect.kind not in zone.hardware_effects or effect.gauge is not None:
+        return False
+    if len(effect.colors) > zone.hardware_colors:
         return False
     return bool(effect.colors) or effect.brightness >= 1.0 or effect.kind is EffectKind.OFF
 
@@ -42,12 +45,23 @@ class LightingEngine:
         self._now = 0.0
 
     def show(self, effects: Mapping[str, Effect]) -> None:
-        """Show a profile's effects. Zones without one keep what they have.
+        """Show a profile's effects, touching only zones whose effect changed.
+
+        Resending an unchanged effect would restart its animation, so a fan
+        curve edit or a switch between similar profiles leaves the lights alone.
+        Zones without an effect keep what they have.
 
         @param effects: the effect for each zone, keyed by zone id.
         """
-        self._effects.update(effects)
-        self.refresh()
+        changed = {
+            zone_id: effect for zone_id, effect in effects.items() if self._effects.get(zone_id) != effect
+        }
+        self._effects.update(changed)
+        for zone in self._registry.zones():
+            if zone.id in changed:
+                self._drawing.pop(zone.id, None)
+                self._last_frames.pop(zone.id, None)
+                self._route(zone, changed[zone.id])
 
     def set_prefer_hardware(self, prefer: bool) -> None:
         """Change who plays effects, and re-show everything the new way.

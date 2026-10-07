@@ -14,6 +14,11 @@ class HidapiTransport:
 
     hidapi's hidraw backend is used so the kernel's own driver, and with it
     the hwmon fan readings, keep working while Prism has the device open.
+
+    The kernel driver and hidraw both see every reply. Prism therefore never
+    asks the device for readings, only sends it settings, and takes fan speeds
+    from hwmon instead; a stray kernel reply can then only be mistaken for an
+    acknowledgement, never for data.
     """
 
     def __init__(self, vendor: int, product: int, report_size: int) -> None:

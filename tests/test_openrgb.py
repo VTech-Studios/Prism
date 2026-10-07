@@ -126,3 +126,33 @@ def test_detectors_need_a_readable_config(tmp_path: Path) -> None:
     assert not detectors.is_off()
     with pytest.raises(DeviceError):
         detectors.turn_off()
+
+
+def test_the_server_is_started_once_and_never_waited_on() -> None:
+    from prism.infrastructure.openrgb import OpenRgbServer
+
+    spawned: list[list[str]] = []
+    server = OpenRgbServer(
+        "127.0.0.1", 1, launch=True, spawn=spawned.append, connect_client=lambda h, p: "client"
+    )
+    for _ in range(3):
+        with pytest.raises(DeviceError, match="waiting"):
+            server.connect()
+    assert spawned == [["openrgb", "--server", "--server-port", "1"]]
+    server._listening = lambda: True  # type: ignore[method-assign]
+    assert server.connect() == "client"
+
+
+def test_the_server_is_not_started_when_launching_is_off() -> None:
+    from prism.infrastructure.openrgb import OpenRgbServer
+
+    spawned: list[list[str]] = []
+    server = OpenRgbServer("127.0.0.1", 1, launch=False, spawn=spawned.append)
+    with pytest.raises(DeviceError, match="turned off"):
+        server.connect()
+    assert spawned == []
+
+
+def test_brightness_respects_the_mode_minimum() -> None:
+    mode = FakeMode("Breathing", flags=16, brightness_min=20, brightness_max=100)
+    assert tune_mode(mode, Effect(EffectKind.OFF, brightness=0.0)).brightness == 20

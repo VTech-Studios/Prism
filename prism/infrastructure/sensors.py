@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -7,7 +8,7 @@ import psutil
 
 from ..domain.devices import Sensor
 from ..domain.errors import DeviceError
-from ..ports import CommandRunner
+from ..ports import CommandRunner, SensorSource
 
 CPU_TEMP = "cpu.temp"
 CPU_LOAD = "cpu.load"
@@ -103,3 +104,42 @@ def _exe_names(cmdline: Sequence[str]) -> set[str]:
     return {
         arg.replace("\\", "/").rsplit("/", 1)[-1].lower() for arg in cmdline if arg.lower().endswith(".exe")
     }
+
+
+class BackgroundSensors:
+    """Reads a slow sensor source on its own thread, so reading it never holds up a lighting frame.
+
+    nvidia-smi can take several hundred milliseconds, far longer than a frame.
+    Reads return the latest finished sample immediately.
+    """
+
+    def __init__(self, source: SensorSource, interval: float = 1.0) -> None:
+        """@param source: the slow source. @param interval: seconds between samples."""
+        self._source = source
+        self._interval = interval
+        self._latest: Mapping[str, float] = {}
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name="prism-sensors", daemon=True)
+        self._thread.start()
+
+    def sensors(self) -> Sequence[Sensor]:
+        """@return: the wrapped source's sensors."""
+        return self._source.sensors()
+
+    def read(self) -> Mapping[str, float]:
+        """@return: the latest finished sample, which is empty until the first one completes."""
+        with self._lock:
+            return dict(self._latest)
+
+    def close(self) -> None:
+        """Stop sampling."""
+        self._stop.set()
+
+    def _run(self) -> None:
+        """Sample until closed."""
+        while not self._stop.is_set():
+            readings = self._source.read()
+            with self._lock:
+                self._latest = readings
+            self._stop.wait(self._interval)

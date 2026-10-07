@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from .config import Paths
 from .domain.automation import RuleEvaluator
+from .domain.cooling import FALLBACK
 from .domain.rendering import Renderer
 from .domain.settings import Settings
 from .infrastructure.autostart import XdgAutostart
@@ -15,7 +16,8 @@ from .infrastructure.hwmon import HwmonFans, find_hwmon
 from .infrastructure.hydro_platinum import HydroPlatinum, find_liquidctl
 from .infrastructure.openrgb import OpenRgbDetectors, OpenRgbLighting, OpenRgbServer
 from .infrastructure.process import SubprocessRunner
-from .infrastructure.sensors import CpuSensors, NvidiaSensors, PsutilProcesses
+from .infrastructure.sensors import BackgroundSensors, CpuSensors, NvidiaSensors, PsutilProcesses
+from .infrastructure.sleep import BootClockSleepWatch
 from .infrastructure.stores import (
     JsonFile,
     JsonProfileFiles,
@@ -54,12 +56,14 @@ class Application:
 def connectors(settings: Settings) -> list[Connector]:
     """Describe how to reach each supported device.
 
-    The Corsair devices come first, so OpenRGB's server, which may reset them
-    as it starts, is up before Prism sends them anything.
+    One OpenRGB server handle is shared by every attempt, so it is only ever
+    started once. Its detection can reset the Corsair devices, but its arrival
+    bumps the registry's generation and everything is sent again.
 
     @param settings: the user's settings, for the LED layout and OpenRGB server.
     @return: one connector per device.
     """
+    server = OpenRgbServer(settings.openrgb_host, settings.openrgb_port, settings.launch_openrgb)
     return [
         Connector(
             "Corsair Commander Pro",
@@ -72,12 +76,7 @@ def connectors(settings: Settings) -> list[Connector]:
         Connector("Corsair Hydro Platinum AIO", lambda: HydroPlatinum(lambda: find_liquidctl("Platinum"))),
         Connector(
             "OpenRGB",
-            lambda: OpenRgbLighting(
-                OpenRgbServer(
-                    settings.openrgb_host, settings.openrgb_port, settings.launch_openrgb
-                ).connect(),
-                settings.openrgb_excluded,
-            ),
+            lambda: OpenRgbLighting(server.connect(), settings.openrgb_excluded),
         ),
     ]
 
@@ -86,7 +85,7 @@ def sensor_sources() -> list[SensorSource]:
     """@return: the sensors that do not belong to a device: the CPU, and the GPU when nvidia-smi exists."""
     sources: list[SensorSource] = [CpuSensors()]
     if shutil.which("nvidia-smi"):
-        sources.append(NvidiaSensors(SubprocessRunner()))
+        sources.append(BackgroundSensors(NvidiaSensors(SubprocessRunner())))
     return sources
 
 
@@ -102,12 +101,13 @@ def build_core(paths: Paths, settings_store: JsonSettingsStore) -> PrismCore:
     return PrismCore(
         registry=registry,
         lighting=LightingEngine(registry, Renderer(), settings.prefer_hardware),
-        cooling=CoolingController(registry, settings.fan_floor),
+        cooling=CoolingController(registry, settings.fan_floor, FALLBACK),
         telemetry=Telemetry(registry, sensor_sources(), PsutilProcesses()),
         library=ProfileLibrary(JsonProfileStore(JsonFile(paths.profiles))),
         automation=AutomationService(JsonRuleStore(JsonFile(paths.rules)), RuleEvaluator()),
         settings_store=settings_store,
         autostart=XdgAutostart(),
+        sleep=BootClockSleepWatch(),
         clock=time.monotonic,
     )
 

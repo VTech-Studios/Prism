@@ -22,6 +22,7 @@ class LightingZone:
     @ivar id: a stable key that profiles use to remember the zone's effect.
     @ivar hardware_effects: effects the device can play by itself, which keep running after Prism exits.
     @ivar streams: whether Prism can draw frames on it, which allows every effect.
+    @ivar hardware_colors: the most colours the device's own effects can use.
     """
 
     id: str
@@ -31,6 +32,7 @@ class LightingZone:
     led_count: int
     hardware_effects: frozenset[EffectKind] = frozenset()
     streams: bool = True
+    hardware_colors: int = 3
 
     def supports(self, kind: EffectKind) -> bool:
         """Say whether the zone can show an effect one way or another.

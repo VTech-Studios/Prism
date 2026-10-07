@@ -5,7 +5,6 @@ import json
 import re
 import socket
 import subprocess
-import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -78,7 +77,8 @@ def tune_mode(mode: Any, effect: Effect) -> Any:
     if tuned.flags & _HAS_DIRECTION_LR:
         tuned.direction = 1 if effect.direction is Direction.FORWARD else 0
     if tuned.flags & _HAS_BRIGHTNESS and tuned.brightness_max is not None:
-        tuned.brightness = round(tuned.brightness_max * effect.brightness)
+        low = tuned.brightness_min or 0
+        tuned.brightness = round(low + (tuned.brightness_max - low) * effect.brightness)
     if tuned.color_mode == _MODE_SPECIFIC and tuned.colors_max:
         tuned.colors = _mode_colors(effect, tuned.colors_min or 1, tuned.colors_max)
     return tuned
@@ -157,7 +157,7 @@ class OpenRgbLighting:
         if mode is None:
             raise DeviceError(f"{device.name} has no {effect.kind.label} mode")
         tuned = tune_mode(mode, effect)
-        self._call(lambda: device.set_mode(tuned, force=True))
+        self._call(lambda: device.set_mode(tuned))
         if tuned.color_mode == _PER_LED and effect.colors:
             color = _rgb(effect.colors[0].scaled(effect.brightness))
             self._call(lambda: device.set_color(color))
@@ -173,7 +173,7 @@ class OpenRgbLighting:
         device = self._device(zone_id)
         if zone_id not in self._drawing:
             direct = find_mode(device.modes, _DIRECT)
-            self._call(lambda: device.set_mode(direct, force=True))
+            self._call(lambda: device.set_mode(direct))
             self._drawing.add(zone_id)
         colors = [_rgb(color) for color in frame]
         self._call(lambda: device.set_colors(colors, fast=True))
@@ -216,28 +216,44 @@ class OpenRgbLighting:
 
 
 class OpenRgbServer:
-    """Finds the OpenRGB SDK server, starting a headless one when none is running.
+    """Finds the OpenRGB SDK server, starting a headless one once if none is running.
 
-    The server is left running when Prism exits. Starting it detects every
-    device again, which resets some of them, so it is better started once.
+    Connecting never waits for OpenRGB: while the server it started is still
+    detecting devices, which can take half a minute, connect simply fails and
+    the registry tries again later. That keeps the fans being driven meanwhile,
+    and means a slow start can never lead to a second server being launched.
+    The server is left running when Prism exits.
     """
 
-    def __init__(self, host: str, port: int, launch: bool, wait: float = 20.0) -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        launch: bool,
+        spawn: Callable[[list[str]], Any] | None = None,
+        connect_client: Callable[[str, int], Any] | None = None,
+    ) -> None:
+        """@param spawn: starts a program in the background, swappable for tests.
+        @param connect_client: opens an SDK client, swappable for tests.
+        """
         self._host = host
         self._port = port
         self._launch = launch
-        self._wait = wait
+        self._spawn = spawn or _spawn_detached
+        self._connect_client = connect_client or (lambda host, port: OpenRGBClient(host, port, name="Prism"))
+        self._started = False
 
     def connect(self) -> Any:
-        """Connect to the server, starting it first if allowed and needed.
+        """Connect to the server, starting it the first time it is missing.
 
         @return: a connected openrgb-python client.
-        @raise DeviceError: if no server could be reached.
+        @raise DeviceError: if the server is not reachable yet.
         """
-        if not self._listening() and self._launch:
-            self._start()
+        if not self._listening():
+            self._start_once()
+            raise DeviceError("waiting for OpenRGB to finish detecting devices")
         try:
-            return OpenRGBClient(self._host, self._port, name="Prism")
+            return self._connect_client(self._host, self._port)
         except (OSError, ValueError) as error:
             raise DeviceError(f"cannot reach the OpenRGB server on port {self._port}: {error}") from error
 
@@ -249,24 +265,35 @@ class OpenRgbServer:
         except OSError:
             return False
 
-    def _start(self) -> None:
-        """Start a headless server and wait until it accepts connections.
+    def _start_once(self) -> None:
+        """Start a headless server, unless starting is off or one was already started.
 
-        @raise DeviceError: if OpenRGB is not installed.
+        @raise DeviceError: if starting is off, or OpenRGB is not installed.
         """
+        if not self._launch:
+            raise DeviceError(f"no OpenRGB server on port {self._port}, and starting one is turned off")
+        if self._started:
+            return
+        self._started = True
         try:
-            subprocess.Popen(
-                ["openrgb", "--server", "--server-port", str(self._port)],
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
+            self._spawn(["openrgb", "--server", "--server-port", str(self._port)])
         except OSError as error:
             raise DeviceError(f"cannot start OpenRGB: {error}") from error
-        deadline = time.monotonic() + self._wait
-        while time.monotonic() < deadline and not self._listening():
-            time.sleep(0.25)
+
+
+def _spawn_detached(args: list[str]) -> subprocess.Popen[bytes]:
+    """Start a program in its own session, so it outlives Prism and never shares its terminal.
+
+    @param args: the program and its arguments.
+    @return: the process.
+    """
+    return subprocess.Popen(
+        args,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
 
 
 class OpenRgbDetectors:

@@ -48,6 +48,7 @@ HARDWARE_MODES: Mapping[EffectKind, int] = {
 _SPEEDS = {Speed.FAST: 0x00, Speed.MEDIUM: 0x01, Speed.SLOW: 0x02}
 _DIRECTIONS = {Direction.FORWARD: 0x01, Direction.BACKWARD: 0x00}
 _EFFECT_COLORS = 3
+HARDWARE_COLORS = 2
 
 
 def effect_colors(effect: Effect) -> tuple[Color, ...]:
@@ -165,6 +166,7 @@ class CommanderPro:
                 kind=DeviceKind.FAN_CONTROLLER,
                 led_count=count,
                 hardware_effects=frozenset(HARDWARE_MODES),
+                hardware_colors=HARDWARE_COLORS,
             )
             for channel, count in sorted(self._channel_leds.items())
         ]

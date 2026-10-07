@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from .errors import ValidationError
 
 DEFAULT_PROFILE = "Default"
+MAX_CHANNEL_LEDS = 204
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,3 +44,5 @@ class Settings:
             raise ValidationError("the exit duty must be between the fan floor and 100")
         if not 1 <= self.frame_rate <= 60:
             raise ValidationError("the frame rate must be between 1 and 60")
+        if any(not 0 <= count <= MAX_CHANNEL_LEDS for count in self.channel_leds.values()):
+            raise ValidationError(f"a lighting channel holds 0 to {MAX_CHANNEL_LEDS} LEDs")
