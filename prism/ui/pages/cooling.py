@@ -4,14 +4,14 @@ from dataclasses import replace
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
-from ...domain.cooling import LIQUID_CURVES, PRESET_CURVES, FanCurve, FanMode, FanSetting, PumpMode
+from ...domain.cooling import FALLBACK, LIQUID_CURVES, PRESET_CURVES, FanCurve, FanMode, FanSetting, PumpMode
 from ...domain.devices import FanChannel
 from ...services.state import PrismState
 from ..client import PrismClient
 from ..theme import Palette
-from ..widgets.basics import Card, Segmented, button, label
+from ..widgets.basics import Card, CommitSlider, Segmented, button, fill_combo, label
 from ..widgets.charts import CurveEditor
 from .base import Page, clear, sensor_name, sensor_unit
 
@@ -49,7 +49,7 @@ class FanCard(QFrame):
         """@param rpm: measured speed. @param duty: duty last set. @param setting: its setting, if any."""
         self._speed.setText(f"{rpm}" if rpm is not None else "--")
         what = (
-            "Untouched"
+            "Default curve"
             if setting is None
             else f"Fixed {setting.duty}%"
             if setting.mode is FanMode.FIXED
@@ -82,16 +82,22 @@ class FanEditor(Card):
         self._mode = Segmented([("Fixed speed", FanMode.FIXED), ("Follow a sensor", FanMode.CURVE)])
         self._mode.changed.connect(self._change_mode)
         self.body.addWidget(self._mode)
+        self._default_note = label(
+            "This profile leaves the fan on the default curve: Balanced, following the CPU. "
+            "Pick a mode to give it its own.",
+            "dim",
+        )
+        self._default_note.setWordWrap(True)
+        self.body.addWidget(self._default_note)
 
         self._fixed = QWidget()
         fixed_row = QHBoxLayout(self._fixed)
         fixed_row.setContentsMargins(0, 8, 0, 0)
-        self._duty = QSlider(Qt.Orientation.Horizontal)
-        self._duty.setRange(0, 100)
+        self._duty = CommitSlider(0, 100)
         self._duty_label = label("", "big")
         self._duty_label.setMinimumWidth(90)
         self._duty.valueChanged.connect(lambda value: self._duty_label.setText(f"{value}%"))
-        self._duty.sliderReleased.connect(lambda: self._emit(replace(self._setting, duty=self._duty.value())))
+        self._duty.committed.connect(lambda value: self._emit(replace(self._setting, duty=value)))
         fixed_row.addWidget(self._duty, 1)
         fixed_row.addWidget(self._duty_label)
         self.body.addWidget(self._fixed)
@@ -120,15 +126,16 @@ class FanEditor(Card):
     def show_setting(self, setting: FanSetting | None, state: PrismState) -> None:
         """Load a fan's setting without emitting edits.
 
-        @param setting: the setting, or None if the profile leaves the fan alone.
+        @param setting: the setting, or None if the fan follows the default curve.
         @param state: the latest state, for sensors and readings.
         """
-        self._setting = setting or FanSetting.fixed(50)
+        self._setting = setting or FALLBACK
         self._mode.set_value(self._setting.mode if setting else None)
+        self._default_note.setVisible(setting is None)
         self._fixed.setVisible(setting is not None and setting.mode is FanMode.FIXED)
         self._curve_box.setVisible(setting is not None and setting.mode is FanMode.CURVE)
-        if not self._duty.isSliderDown():
-            self._duty.setValue(self._setting.duty)
+        self._duty.set_quietly(self._setting.duty)
+        self._duty_label.setText(f"{self._duty.value()}%")
         self._show_sensors(state)
         self._show_presets()
         if self._setting.curve is not None:
@@ -140,21 +147,17 @@ class FanEditor(Card):
         ids = [sensor.id for sensor in state.sensors if sensor.unit == "°C"]
         if self._setting.sensor not in ids:
             ids.append(self._setting.sensor)
-        self._sensor.blockSignals(True)
-        self._sensor.clear()
-        for sensor_id in ids:
-            self._sensor.addItem(sensor_name(state, sensor_id), sensor_id)
-        self._sensor.setCurrentIndex(ids.index(self._setting.sensor))
-        self._sensor.blockSignals(False)
+        fill_combo(
+            self._sensor,
+            [(sensor_name(state, sensor_id), sensor_id) for sensor_id in ids],
+            self._setting.sensor,
+        )
 
     def _show_presets(self) -> None:
         """Offer the coolant presets for the coolant sensor and the CPU ones otherwise."""
         presets = LIQUID_CURVES if self._setting.sensor == "liquid.temp" else PRESET_CURVES
-        self._preset.blockSignals(True)
-        self._preset.clear()
-        self._preset.addItems([*presets, CUSTOM])
-        self._preset.setCurrentText(preset_name(self._setting.curve))
-        self._preset.blockSignals(False)
+        names = [*presets, CUSTOM]
+        fill_combo(self._preset, [(name, name) for name in names], preset_name(self._setting.curve))
 
     def _pick_preset(self) -> None:
         """Replace the curve with the chosen preset."""
@@ -197,7 +200,7 @@ class CoolingPage(Page):
         self.body.addWidget(self._editor)
         actions = QHBoxLayout()
         actions.addWidget(button("Use on every fan", self._apply_everywhere))
-        actions.addWidget(button("Leave this fan alone", self._unset))
+        actions.addWidget(button("Use the default curve", self._unset))
         actions.addStretch()
         self.body.addLayout(actions)
 
@@ -286,7 +289,7 @@ class CoolingPage(Page):
         )
 
     def _unset(self) -> None:
-        """Remove the selected fan from the profile, so it keeps whatever speed it has."""
+        """Remove the selected fan from the profile, so it follows the default curve."""
         fan_id = self._selected
         if fan_id is not None:
             self._client.edit_chosen(

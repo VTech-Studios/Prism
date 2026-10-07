@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QPushButton,
-    QSlider,
     QVBoxLayout,
     QWidget,
 )
@@ -23,7 +22,7 @@ from ...domain.rendering import Renderer
 from ...services.state import PrismState
 from ..client import PrismClient
 from ..theme import Palette
-from ..widgets.basics import Card, Segmented, Swatch, button, label
+from ..widgets.basics import Card, CommitSlider, Segmented, Swatch, button, fill_combo, label
 from ..widgets.charts import LedPreview
 from .base import Page, clear, sensor_name
 
@@ -98,10 +97,9 @@ class EffectEditor(Card):
         )
         self._direction_box = self._labelled("Direction", self._direction)
 
-        self._brightness = QSlider(Qt.Orientation.Horizontal)
-        self._brightness.setRange(5, 100)
+        self._brightness = CommitSlider(5, 100)
         self._brightness.valueChanged.connect(self._preview_brightness)
-        self._brightness.sliderReleased.connect(self._commit_brightness)
+        self._brightness.committed.connect(self._commit_brightness)
         self._brightness_box = self._labelled("Brightness", self._brightness)
 
         gauge_row = QHBoxLayout()
@@ -130,6 +128,8 @@ class EffectEditor(Card):
             self._build_chips(zone)
         self._effect = effect
         self._readings = dict(state.readings)
+        if effect is not None and self._brightness.busy():
+            effect = replace(effect, brightness=self._brightness.value() / 100)
         self._preview.show_effect(effect, zone.led_count, self._readings)
         for kind, chip in self._chip_buttons.items():
             chip.setChecked(effect is not None and effect.kind is kind)
@@ -152,10 +152,7 @@ class EffectEditor(Card):
         self._rebuild_swatches(effect)
         self._speed.set_value(effect.speed)
         self._direction.set_value(effect.direction)
-        if not self._brightness.isSliderDown():
-            self._brightness.blockSignals(True)
-            self._brightness.setValue(round(effect.brightness * 100))
-            self._brightness.blockSignals(False)
+        self._brightness.set_quietly(round(effect.brightness * 100))
         if effect.gauge:
             self._show_gauge(effect.gauge, state)
 
@@ -165,12 +162,9 @@ class EffectEditor(Card):
         ids = [sensor.id for sensor in temperatures]
         if gauge.sensor not in ids:
             ids.append(gauge.sensor)
-        self._sensor.blockSignals(True)
-        self._sensor.clear()
-        for sensor_id in ids:
-            self._sensor.addItem(sensor_name(state, sensor_id), sensor_id)
-        self._sensor.setCurrentIndex(ids.index(gauge.sensor))
-        self._sensor.blockSignals(False)
+        fill_combo(
+            self._sensor, [(sensor_name(state, sensor_id), sensor_id) for sensor_id in ids], gauge.sensor
+        )
         for spin, value in ((self._cool, gauge.cool), (self._hot, gauge.hot)):
             if not spin.hasFocus():
                 spin.setValue(value)
@@ -216,9 +210,9 @@ class EffectEditor(Card):
             preview = replace(self._effect, brightness=value / 100)
             self._preview.show_effect(preview, self._zone.led_count, self._readings)
 
-    def _commit_brightness(self) -> None:
-        """Save the brightness once the slider is let go."""
-        self._emit(replace(self._current(), brightness=self._brightness.value() / 100))
+    def _commit_brightness(self, value: int) -> None:
+        """@param value: the brightness the user settled on, in percent."""
+        self._emit(replace(self._current(), brightness=value / 100))
 
     def _commit_gauge(self) -> None:
         """Save the sensor and range, ignoring a range that is the wrong way round."""

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QComboBox, QFileDialog
 from pytestqt.qtbot import QtBot
 
 from prism.domain.cooling import FanMode, FanSetting
@@ -24,6 +24,7 @@ from prism.ui.pages.profiles import ProfilesPage, summary
 from prism.ui.pages.settings import SettingsPage
 from prism.ui.theme import Palette, stylesheet
 from prism.ui.tray import Tray
+from prism.ui.widgets.basics import CommitSlider, Segmented, fill_combo
 from tests.rig import Rig, showroom
 
 
@@ -144,8 +145,7 @@ def test_lighting_brightness_and_gauge(ui: Ui, qtbot: QtBot) -> None:
     page.refresh(ui.state())
     page._select("aio:led")
     editor = page._editor
-    editor._brightness.setValue(50)
-    editor._commit_brightness()
+    editor._brightness.committed.emit(50)
     assert ui.chosen().lighting["aio:led"].brightness == 0.5
     editor._hot.setValue(50)
     editor._commit_gauge()
@@ -159,8 +159,7 @@ def test_cooling_switches_modes_and_presets(ui: Ui, qtbot: QtBot) -> None:
     page.refresh(ui.state())
     page._editor._mode.changed.emit(FanMode.FIXED)
     assert ui.chosen().cooling["cpro:fan1"] == FanSetting.fixed(50)
-    page._editor._duty.setValue(70)
-    page._editor._duty.sliderReleased.emit()
+    page._editor._duty.committed.emit(70)
     assert ui.chosen().cooling["cpro:fan1"].duty == 70
     page._apply_everywhere()
     assert all(setting.duty == 70 for setting in ui.chosen().cooling.values())
@@ -264,3 +263,38 @@ def test_tray_menu_lists_profiles(ui: Ui, qtbot: QtBot) -> None:
     assert ui.state().chosen == "Quiet"
     tray._clicked(tray.ActivationReason.Trigger)
     assert shown == [True]
+
+
+def test_sliders_save_keyboard_changes_after_settling(qtbot: QtBot) -> None:
+    slider = CommitSlider(0, 100)
+    qtbot.addWidget(slider)
+    with qtbot.waitSignal(slider.committed, timeout=2000) as saved:
+        slider.setValue(40)
+        slider.setValue(45)
+        assert slider.busy()
+        slider.set_quietly(10)
+        assert slider.value() == 45
+    assert saved.args == [45]
+    slider.set_quietly(10)
+    assert slider.value() == 10
+
+
+def test_combos_are_left_alone_when_nothing_changed(qtbot: QtBot) -> None:
+    combo = QComboBox()
+    qtbot.addWidget(combo)
+    fill_combo(combo, [("CPU", "cpu.temp"), ("GPU", "gpu.temp")], "gpu.temp")
+    assert combo.currentText() == "GPU"
+    cleared: list[bool] = []
+    combo.model().modelReset.connect(lambda: cleared.append(True))
+    combo.model().rowsRemoved.connect(lambda *_: cleared.append(True))
+    fill_combo(combo, [("CPU", "cpu.temp"), ("GPU", "gpu.temp")], "cpu.temp")
+    assert combo.currentText() == "CPU"
+    assert cleared == []
+
+
+def test_segments_can_show_no_choice(qtbot: QtBot) -> None:
+    segments = Segmented([("A", 1), ("B", 2)])
+    qtbot.addWidget(segments)
+    segments.set_value(2)
+    segments.set_value(None)
+    assert not any(button.isChecked() for button in segments._group.buttons())

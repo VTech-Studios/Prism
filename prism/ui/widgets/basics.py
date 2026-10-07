@@ -7,17 +7,21 @@ from PySide6.QtGui import QColor, QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
     QColorDialog,
+    QComboBox,
     QFrame,
     QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QSizePolicy,
+    QSlider,
     QVBoxLayout,
     QWidget,
 )
 
 from ...domain.color import Color
+
+SETTLE_MS = 350
 
 
 def label(text: str, name: str = "") -> QLabel:
@@ -90,12 +94,75 @@ class Segmented(QWidget):
         self._group.idClicked.connect(lambda index: self.changed.emit(self._values[index]))
 
     def set_value(self, value: object) -> None:
-        """Select the segment for a value without emitting a change.
+        """Select the segment for a value without emitting a change, or clear the selection.
 
-        @param value: one of the option values.
+        @param value: one of the option values, or anything else to select none.
         """
         if value in self._values:
             self._group.button(self._values.index(value)).setChecked(True)
+            return
+        self._group.setExclusive(False)
+        for segment in self._group.buttons():
+            segment.setChecked(False)
+        self._group.setExclusive(True)
+
+
+class CommitSlider(QSlider):
+    """A slider that saves once the user settles on a value, however they moved it.
+
+    Dragging, the keyboard, the mouse wheel and clicking the track all count,
+    and a burst of changes is saved once, shortly after the last one.
+    """
+
+    committed = Signal(int)
+
+    def __init__(self, low: int, high: int, parent: QWidget | None = None) -> None:
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self.setRange(low, high)
+        self._settle = QTimer(self, singleShot=True, interval=SETTLE_MS)
+        self._settle.timeout.connect(lambda: self.committed.emit(self.value()))
+        self.valueChanged.connect(self._changed)
+        self.sliderReleased.connect(self._settle.start)
+
+    def busy(self) -> bool:
+        """@return: whether the user is mid-change, so outside updates should wait."""
+        return self.isSliderDown() or self._settle.isActive()
+
+    def set_quietly(self, value: int) -> None:
+        """Show a value from outside without saving it, unless the user is mid-change.
+
+        @param value: the value.
+        """
+        if not self.busy():
+            self.blockSignals(True)
+            self.setValue(value)
+            self.blockSignals(False)
+
+    def _changed(self) -> None:
+        """Restart the settle timer, unless a drag is still going and release will start it."""
+        if not self.isSliderDown():
+            self._settle.start()
+
+
+def fill_combo(combo: QComboBox, items: Sequence[tuple[str, object]], current: object) -> None:
+    """Fill a combo box, leaving it alone if nothing changed or its list is open.
+
+    Refilling on every update would close an open list under the user's cursor.
+
+    @param combo: the combo box.
+    @param items: (caption, value) pairs.
+    @param current: the value to select.
+    """
+    if combo.view().isVisible():
+        return
+    existing = [(combo.itemText(index), combo.itemData(index)) for index in range(combo.count())]
+    combo.blockSignals(True)
+    if existing != list(items):
+        combo.clear()
+        for caption, value in items:
+            combo.addItem(caption, value)
+    combo.setCurrentIndex(max(0, combo.findData(current)))
+    combo.blockSignals(False)
 
 
 class Swatch(QPushButton):
