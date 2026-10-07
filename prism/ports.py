@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from .domain.automation import Rule
 from .domain.cooling import PumpMode
@@ -23,6 +23,7 @@ class Device(Protocol):
         ...
 
 
+@runtime_checkable
 class LightingDevice(Device, Protocol):
     def zones(self) -> Sequence[LightingZone]:
         """@return: every lighting zone the device has."""
@@ -47,6 +48,7 @@ class LightingDevice(Device, Protocol):
         ...
 
 
+@runtime_checkable
 class FanDevice(Device, Protocol):
     def fans(self) -> Sequence[FanChannel]:
         """@return: every fan the device can drive."""
@@ -66,6 +68,7 @@ class FanDevice(Device, Protocol):
         ...
 
 
+@runtime_checkable
 class PumpDevice(Device, Protocol):
     def set_pump(self, mode: PumpMode) -> None:
         """Change how hard the AIO pump works.
@@ -76,6 +79,7 @@ class PumpDevice(Device, Protocol):
         ...
 
 
+@runtime_checkable
 class SensorSource(Protocol):
     def sensors(self) -> Sequence[Sensor]:
         """@return: every value this source can read."""
