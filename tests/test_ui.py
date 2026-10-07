@@ -298,3 +298,17 @@ def test_segments_can_show_no_choice(qtbot: QtBot) -> None:
     segments.set_value(2)
     segments.set_value(None)
     assert not any(button.isChecked() for button in segments._group.buttons())
+
+
+def test_a_settling_slider_change_is_saved_to_the_fan_it_was_made_on(ui: Ui, qtbot: QtBot) -> None:
+    page = CoolingPage(ui.client, Palette())
+    qtbot.addWidget(page)
+    ui.client.stateChanged.connect(page.refresh)
+    page.refresh(ui.state())
+    second = ui.chosen().cooling["cpro:fan2"]
+    page._editor._mode.changed.emit(FanMode.FIXED)
+    page._editor._duty.setValue(77)
+    page._select("cpro:fan2")
+    cooling = ui.chosen().cooling
+    assert cooling["cpro:fan1"].duty == 77
+    assert cooling["cpro:fan2"] == second

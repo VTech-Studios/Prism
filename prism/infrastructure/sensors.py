@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import threading
+import time
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -14,6 +16,10 @@ CPU_TEMP = "cpu.temp"
 CPU_LOAD = "cpu.load"
 GPU_TEMP = "gpu.temp"
 GPU_LOAD = "gpu.load"
+
+STALE_AFTER = 3
+
+_LOG = logging.getLogger(__name__)
 
 _CPU_PROBES = (("coretemp", "Package id 0"), ("k10temp", "Tctl"), ("zenpower", "Tdie"))
 
@@ -118,6 +124,7 @@ class BackgroundSensors:
         self._source = source
         self._interval = interval
         self._latest: Mapping[str, float] = {}
+        self._taken = 0.0
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="prism-sensors", daemon=True)
@@ -128,9 +135,10 @@ class BackgroundSensors:
         return self._source.sensors()
 
     def read(self) -> Mapping[str, float]:
-        """@return: the latest finished sample, which is empty until the first one completes."""
+        """@return: the latest sample, or nothing if there is none recent enough to trust."""
         with self._lock:
-            return dict(self._latest)
+            fresh = time.monotonic() - self._taken <= self._interval * STALE_AFTER
+            return dict(self._latest) if fresh else {}
 
     def close(self) -> None:
         """Stop sampling."""
@@ -139,7 +147,11 @@ class BackgroundSensors:
     def _run(self) -> None:
         """Sample until closed."""
         while not self._stop.is_set():
-            readings = self._source.read()
-            with self._lock:
-                self._latest = readings
+            try:
+                readings = self._source.read()
+            except Exception:
+                _LOG.exception("background sensor read failed")
+            else:
+                with self._lock:
+                    self._latest, self._taken = readings, time.monotonic()
             self._stop.wait(self._interval)

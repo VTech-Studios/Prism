@@ -224,6 +224,10 @@ class EffectEditor(Card):
         """@return: the effect being edited, or a starting point if the zone has none."""
         return self._effect or Effect.static(PALETTE[0])
 
+    def flush(self) -> None:
+        """Save any slider change still settling, before the selection moves on."""
+        self._brightness.flush()
+
     def _emit(self, effect: Effect) -> None:
         """Show an edit at once and report it.
 
@@ -350,6 +354,7 @@ class LightingPage(Page):
 
     def _select(self, zone_id: str) -> None:
         """@param zone_id: the zone clicked."""
+        self._editor.flush()
         self._selected = zone_id
         self._mark_selected()
         if self._state is not None:

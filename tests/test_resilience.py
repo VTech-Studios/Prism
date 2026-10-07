@@ -77,3 +77,38 @@ def test_effects_with_more_colours_than_the_device_holds_are_drawn() -> None:
 def test_channel_led_counts_are_checked() -> None:
     with pytest.raises(ValidationError):
         Settings(channel_leds={1: 300})
+
+
+def test_background_sensors_go_quiet_when_their_thread_cannot_read() -> None:
+    attempts = threading.Event()
+
+    class Failing(FakeSensors):
+        def read(self) -> dict[str, float]:
+            attempts.set()
+            raise RuntimeError("nvidia-smi crashed")
+
+    background = BackgroundSensors(Failing(), interval=0.01)
+    assert attempts.wait(2)
+    assert background.read() == {}
+    background.close()
+
+
+def test_old_background_samples_are_not_trusted() -> None:
+    background = BackgroundSensors(FakeSensors({"gpu.temp": 50.0}), interval=0.01)
+    deadline = time.monotonic() + 2
+    while not background.read() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    background.close()
+    time.sleep(0.1)
+    assert background.read() == {}
+
+
+def test_openrgb_with_no_devices_yet_is_not_ready() -> None:
+    from prism.domain.errors import DeviceError
+    from prism.infrastructure.openrgb import OpenRgbLighting
+    from tests.fakes import FakeOrgbClient
+
+    client = FakeOrgbClient([])
+    with pytest.raises(DeviceError, match="not found any devices"):
+        OpenRgbLighting(client, [])
+    assert client.disconnected

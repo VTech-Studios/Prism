@@ -27,7 +27,7 @@ class RuntimeLoop:
         self._listeners: list[Callable[[PrismState], None]] = []
         self._commands: queue.SimpleQueue[Command] = queue.SimpleQueue()
         self._running = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="prism-runtime", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="prism-runtime")
 
     def subscribe(self, listener: Callable[[PrismState], None]) -> None:
         """Be told about every new state. Call before starting the loop.
@@ -56,6 +56,8 @@ class RuntimeLoop:
         self._running.clear()
         if self._thread.is_alive():
             self._thread.join(timeout)
+        if self._thread.is_alive():
+            _LOG.warning("the runtime loop is still finishing; the fans will be handed off when it does")
 
     def _run(self) -> None:
         """Connect, then run frames until stopped, then shut down whatever happened in between."""

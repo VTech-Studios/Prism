@@ -5,16 +5,17 @@ import pytest
 
 from prism.domain.automation import ProcessRunning, ReadingAbove, Rule
 from prism.domain.color import Color
-from prism.domain.cooling import FanSetting
+from prism.domain.cooling import FanCurve, FanSetting
 from prism.domain.effects import Effect
 from prism.domain.errors import DeviceError, ValidationError
 from prism.domain.profile import Profile
 from prism.domain.rendering import Frame
 from prism.domain.settings import Settings
+from prism.services.cooling import FAILSAFE_DUTY
 from prism.services.core import PrismCore
 from prism.services.loop import RuntimeLoop
 from prism.services.state import PrismState
-from tests.fakes import FakeLights, zone
+from tests.fakes import FakeLights, FakeSensors, zone
 from tests.rig import Rig
 
 RED = Effect.static(Color(255, 0, 0))
@@ -244,3 +245,20 @@ def test_the_loop_still_hands_off_the_fans_when_publishing_fails() -> None:
     loop.stop()
     assert rig.fans.closed
     assert rig.fans.duties == {"fan1": 50, "fan2": 50}
+
+
+class BrokenSensors(FakeSensors):
+    def read(self) -> dict[str, float]:
+        raise RuntimeError("probe vanished")
+
+
+def test_a_failing_sensor_sends_its_fans_to_failsafe_not_stale_readings() -> None:
+    sensors = FakeSensors({"cpu.temp": 30.0})
+    curve = FanSetting.following("cpu.temp", FanCurve.of([(30, 30), (90, 90)]))
+    rig = Rig([Profile("A", cooling={"fan1": curve})], sensors=sensors)
+    rig.core.start()
+    rig.advance(1)
+    assert rig.fans.duties["fan1"] == 30
+    rig.sensors.read = BrokenSensors().read  # type: ignore[method-assign]
+    rig.advance(1)
+    assert rig.fans.duties["fan1"] == FAILSAFE_DUTY

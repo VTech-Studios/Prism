@@ -111,8 +111,14 @@ class OpenRgbLighting:
     """
 
     def __init__(self, client: Any, excluded: Sequence[str]) -> None:
-        """@param client: a connected openrgb-python client.
+        """Take on OpenRGB's devices, treating an empty list as not ready yet.
+
+        OpenRGB opens its port before it has finished detecting, so an empty
+        list means come back later, and the registry will.
+
+        @param client: a connected openrgb-python client.
         @param excluded: device names, or parts of them, to leave alone.
+        @raise DeviceError: if OpenRGB offers no devices Prism should drive.
         """
         self._client = client
         self._devices: dict[str, Any] = {}
@@ -122,6 +128,9 @@ class OpenRgbLighting:
         for device in client.devices:
             if not any(name in device.name.lower() for name in lowered):
                 self._add(device)
+        if not self._devices:
+            client.disconnect()
+            raise DeviceError("OpenRGB has not found any devices yet")
 
     @property
     def name(self) -> str:

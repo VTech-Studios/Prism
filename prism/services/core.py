@@ -87,7 +87,7 @@ class PrismCore:
         self._isolated("resyncing devices", self._sync_devices)
         if now >= self._next_sample:
             self._next_sample = now + SAMPLE_INTERVAL
-            self._isolated("measuring", lambda: self._measure(now))
+            self._isolated("measuring", lambda: self._measure(now), on_failure=self._forget_sample)
             self._isolated(
                 "driving the fans", lambda: self._cooling.tick(self._sample.snapshot.readings, now)
             )
@@ -216,9 +216,8 @@ class PrismCore:
 
     def state(self) -> PrismState:
         """@return: a snapshot of everything the window shows."""
-        self.changed = False
         zones = self._registry.zones()
-        return PrismState(
+        state = PrismState(
             settings=self._settings,
             profiles=tuple(self._library.profiles),
             chosen=self._settings.active_profile,
@@ -237,6 +236,8 @@ class PrismCore:
             autostart=self._autostart.enabled(),
             notice=self._notice,
         )
+        self.changed = False
+        return state
 
     def _reconnect(self, now: float) -> None:
         """Retry offline devices now and then, and reopen everything after the machine wakes.
@@ -266,16 +267,25 @@ class PrismCore:
             self._show(target)
         self.changed = True
 
-    def _isolated(self, step: str, action: Callable[[], object]) -> None:
+    def _forget_sample(self) -> None:
+        """Drop the last sample, so fans run at their failsafe speed instead of on old readings."""
+        self._sample = Sample()
+
+    def _isolated(
+        self, step: str, action: Callable[[], object], on_failure: Callable[[], None] | None = None
+    ) -> None:
         """Run one step of a tick, logging any failure instead of letting it stop the next step.
 
         @param step: what the step does, for the log.
         @param action: the step.
+        @param on_failure: what to do after the step fails, if anything.
         """
         try:
             action()
         except Exception:
             _LOG.exception("failed while %s", step)
+            if on_failure is not None:
+                on_failure()
 
     def _show(self, name: str, force: bool = False) -> None:
         """Apply a profile to every device.

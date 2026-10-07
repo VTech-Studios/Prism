@@ -56,12 +56,14 @@ class LightingEngine:
         changed = {
             zone_id: effect for zone_id, effect in effects.items() if self._effects.get(zone_id) != effect
         }
-        self._effects.update(changed)
-        for zone in self._registry.zones():
-            if zone.id in changed:
-                self._drawing.pop(zone.id, None)
-                self._last_frames.pop(zone.id, None)
-                self._route(zone, changed[zone.id])
+        connected = {zone.id: zone for zone in self._registry.zones()}
+        for zone_id, effect in changed.items():
+            zone = connected.get(zone_id)
+            if zone is not None:
+                self._drawing.pop(zone_id, None)
+                self._last_frames.pop(zone_id, None)
+                self._route(zone, effect)
+            self._effects[zone_id] = effect
 
     def set_prefer_hardware(self, prefer: bool) -> None:
         """Change who plays effects, and re-show everything the new way.

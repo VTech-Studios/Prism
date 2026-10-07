@@ -128,6 +128,12 @@ class CommitSlider(QSlider):
         """@return: whether the user is mid-change, so outside updates should wait."""
         return self.isSliderDown() or self._settle.isActive()
 
+    def flush(self) -> None:
+        """Save a change that is still settling now, before what it belongs to changes."""
+        if self._settle.isActive():
+            self._settle.stop()
+            self.committed.emit(self.value())
+
     def set_quietly(self, value: int) -> None:
         """Show a value from outside without saving it, unless the user is mid-change.
 

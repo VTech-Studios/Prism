@@ -174,6 +174,10 @@ class FanEditor(Card):
         else:
             self._emit(FanSetting.fixed(self._setting.duty))
 
+    def flush(self) -> None:
+        """Save any slider change still settling, before the selection moves on."""
+        self._duty.flush()
+
     def _emit(self, setting: FanSetting) -> None:
         """@param setting: the edited setting."""
         self._setting = setting
@@ -260,6 +264,7 @@ class CoolingPage(Page):
 
     def _select(self, fan_id: str) -> None:
         """@param fan_id: the fan clicked."""
+        self._editor.flush()
         self._selected = fan_id
         self._mark_selected()
         if self._state is not None:
