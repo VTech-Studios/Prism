@@ -75,6 +75,7 @@ class Rig:
 def showroom() -> Rig:
     """A rig dressed like a real machine: case fans, an AIO, RAM and a GPU, with live readings."""
     lights = FakeLights(
+        "OpenRGB",
         zones=[
             LightingZone(
                 "cpro:led1", "RGB channel 1", "Corsair Commander Pro", DeviceKind.FAN_CONTROLLER, 72
@@ -99,7 +100,9 @@ def showroom() -> Rig:
             ),
         ]
     )
-    fans = FakeFans("Corsair Commander Pro", ["cpro:fan1", "cpro:fan2", "cpro:fan3", "aio:fan1", "aio:fan2"])
+    names = {"cpro:fan1": "Fan 1", "cpro:fan2": "Fan 2", "cpro:fan3": "Fan 3"}
+    names |= {"aio:fan1": "Radiator fan 1", "aio:fan2": "Radiator fan 2"}
+    fans = FakeFans("Corsair Commander Pro", list(names), names)
     sensors = FakeSensors(
         {"cpu.temp": 46.0, "cpu.load": 18.0, "gpu.temp": 55.0, "gpu.load": 7.0, "liquid.temp": 31.5},
         {

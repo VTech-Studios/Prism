@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Prism
+GenericName=RGB and Fan Control
+Comment=RGB lighting, fan speeds and cooling profiles
+Exec=prism
+Icon=prism
+Terminal=false
+Categories=Settings;HardwareSettings;System;
+Keywords=rgb;fans;lighting;corsair;icue;openrgb;liquidctl;cooling;
+StartupWMClass=prism

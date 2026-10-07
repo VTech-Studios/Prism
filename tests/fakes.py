@@ -154,9 +154,15 @@ class FakeLights:
 class FakeFans:
     """A fan controller with a pump, that remembers every duty it was given."""
 
-    def __init__(self, name: str = "Fans", fan_ids: Sequence[str] = ("fan1", "fan2")) -> None:
+    def __init__(
+        self,
+        name: str = "Fans",
+        fan_ids: Sequence[str] = ("fan1", "fan2"),
+        names: dict[str, str] | None = None,
+    ) -> None:
         self._name = name
-        self._fans = [FanChannel(fan_id, fan_id.title(), name) for fan_id in fan_ids]
+        names = names or {}
+        self._fans = [FanChannel(fan_id, names.get(fan_id, fan_id.title()), name) for fan_id in fan_ids]
         self.duties: dict[str, int] = {}
         self.history: list[tuple[str, int]] = []
         self.pump: PumpMode | None = None
