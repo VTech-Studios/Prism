@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from prism.domain.automation import ProcessRunning, Rule, RuleEvaluator
+from prism.domain.cooling import FanSetting
 from prism.domain.devices import DeviceKind, LightingZone
 from prism.domain.effects import EffectKind
 from prism.domain.profile import Profile
@@ -18,6 +19,7 @@ from tests.fakes import (
     FakeLights,
     FakeProcesses,
     FakeSensors,
+    FakeSleep,
     MemoryProfileStore,
     MemoryRuleStore,
     MemorySettingsStore,
@@ -51,6 +53,7 @@ class Rig:
         self.profiles = MemoryProfileStore(profiles)
         self.settings = MemorySettingsStore()
         self.autostart = FakeAutostart()
+        self.sleep = FakeSleep()
         self.clock = Clock()
         self.registry = registry = DeviceRegistry(
             [Connector("Lights", lambda: self.lights), Connector("Fans", lambda: self.fans)]
@@ -58,12 +61,13 @@ class Rig:
         self.core = PrismCore(
             registry=registry,
             lighting=LightingEngine(registry, Renderer(), prefer_hardware=True),
-            cooling=CoolingController(registry, floor=20),
+            cooling=CoolingController(registry, 20, FanSetting.fixed(35)),
             telemetry=Telemetry(registry, [self.sensors], self.processes),
             library=ProfileLibrary(self.profiles),
             automation=AutomationService(MemoryRuleStore(rules), RuleEvaluator()),
             settings_store=self.settings,
             autostart=self.autostart,
+            sleep=self.sleep,
             clock=self.clock,
         )
 
@@ -98,7 +102,7 @@ def showroom() -> Rig:
                 frozenset({EffectKind.STATIC, EffectKind.BREATHING}),
                 streams=False,
             ),
-        ]
+        ],
     )
     names = {"cpro:fan1": "Fan 1", "cpro:fan2": "Fan 2", "cpro:fan3": "Fan 3"}
     names |= {"aio:fan1": "Radiator fan 1", "aio:fan2": "Radiator fan 2"}

@@ -6,7 +6,7 @@ from dataclasses import replace
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon
 
-from ..services.core import PrismState
+from ..services.state import PrismState
 from .client import PrismClient
 from .icons import app_icon
 

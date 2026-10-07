@@ -49,7 +49,15 @@ class DeviceRegistry:
             if slot.device is None:
                 self._connect(slot)
 
-    def fail(self, device: Device, error: PrismError) -> None:
+    def reopen(self) -> None:
+        """Close and reopen every device, for when they may have lost their state, such as after suspend."""
+        for slot in self._slots:
+            if slot.device is not None:
+                self._close(slot)
+        self.generation += 1
+        self.connect_offline()
+
+    def fail(self, device: Device, error: Exception) -> None:
         """Take a device offline after it stopped responding, so it is retried later.
 
         @param device: the device.
@@ -126,6 +134,10 @@ class DeviceRegistry:
             fans = list(device.fans()) if isinstance(device, FanDevice) else []
         except PrismError as error:
             slot.error = str(error)
+            return
+        except Exception as error:
+            _LOG.exception("connecting %s failed unexpectedly", slot.connector.name)
+            slot.error = f"could not connect: {error}"
             return
         slot.device, slot.zones, slot.fans, slot.error = device, zones, fans, ""
         self.generation += 1

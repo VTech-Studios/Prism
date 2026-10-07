@@ -5,7 +5,7 @@ from PySide6.QtGui import QColor, QPainter, QPaintEvent
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 
 from ...domain.devices import Sensor
-from ...services.core import PrismState
+from ...services.state import PrismState
 from ..theme import Palette
 from ..widgets.basics import Card, label
 from ..widgets.charts import Sparkline

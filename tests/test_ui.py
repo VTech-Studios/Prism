@@ -12,8 +12,8 @@ from prism.domain.effects import EffectKind
 from prism.domain.errors import ValidationError
 from prism.domain.profile import Profile
 from prism.domain.rendering import Renderer
-from prism.services.core import PrismState
 from prism.services.loop import Command
+from prism.services.state import PrismState
 from prism.ui.client import PrismClient
 from prism.ui.main_window import MainWindow
 from prism.ui.pages.automation import AutomationPage, RuleDialog

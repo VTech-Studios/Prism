@@ -249,6 +249,15 @@ class MemorySettingsStore:
         self.settings = settings
 
 
+class FakeSleep:
+    def __init__(self) -> None:
+        self.slept = False
+
+    def woke(self) -> bool:
+        woke, self.slept = self.slept, False
+        return woke
+
+
 class FakeAutostart:
     def __init__(self) -> None:
         self.on = False

@@ -7,7 +7,8 @@ import time
 from collections.abc import Callable
 
 from ..domain.errors import PrismError
-from .core import PrismCore, PrismState
+from .core import PrismCore
+from .state import PrismState
 
 _LOG = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class RuntimeLoop:
         """
         self._commands.put(command)
 
-    def stop(self, timeout: float = 5.0) -> None:
+    def stop(self, timeout: float = 10.0) -> None:
         """Stop the loop, which leaves the fans safe and releases the devices.
 
         @param timeout: seconds to wait for it to finish.
@@ -57,19 +58,28 @@ class RuntimeLoop:
             self._thread.join(timeout)
 
     def _run(self) -> None:
-        """Connect, then run frames until stopped, then shut down."""
-        self._guarded(PrismCore.start)
-        while self._running.is_set():
-            started = time.monotonic()
-            self._drain()
-            self._guarded(PrismCore.tick)
-            if self._core.changed:
-                state = self._core.state()
-                for listener in self._listeners:
-                    listener(state)
-            period = 1.0 / self._core.settings.frame_rate
-            time.sleep(max(0.0, period - (time.monotonic() - started)))
-        self._guarded(PrismCore.shutdown)
+        """Connect, then run frames until stopped, then shut down whatever happened in between."""
+        try:
+            self._guarded(PrismCore.start)
+            while self._running.is_set():
+                started = time.monotonic()
+                self._drain()
+                self._guarded(PrismCore.tick)
+                self._guarded(self._publish)
+                period = 1.0 / self._core.settings.frame_rate
+                time.sleep(max(0.0, period - (time.monotonic() - started)))
+        finally:
+            self._guarded(PrismCore.shutdown)
+
+    def _publish(self, core: PrismCore) -> None:
+        """Hand a fresh state to every listener, if anything changed.
+
+        @param core: the core.
+        """
+        if core.changed:
+            state = core.state()
+            for listener in self._listeners:
+                listener(state)
 
     def _drain(self) -> None:
         """Run every queued command."""

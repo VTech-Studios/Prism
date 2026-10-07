@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ..domain.color import Color
-from ..domain.cooling import PRESET_CURVES, FanCurve, FanSetting, PumpMode
+from ..domain.cooling import LIQUID_CURVES, PRESET_CURVES, FanSetting, PumpMode
 from ..domain.devices import DeviceKind, FanChannel, LightingZone
 from ..domain.effects import Effect, EffectKind, Gauge, Speed
 from ..domain.profile import Profile
@@ -11,11 +11,6 @@ from ..domain.settings import DEFAULT_PROFILE
 
 ORANGE = Color.from_hex("#ff2800")
 COOLANT_COLORS = (Color.from_hex("#00ff00"), Color.from_hex("#ffa500"), Color.from_hex("#ff0000"))
-LIQUID_CURVES = {
-    "Quiet": FanCurve.of([(25, 25), (32, 35), (38, 60), (44, 100)]),
-    "Balanced": FanCurve.of([(25, 30), (30, 40), (35, 65), (40, 90), (44, 100)]),
-    "Performance": FanCurve.of([(25, 50), (30, 65), (35, 85), (40, 100)]),
-}
 
 
 def _lighting(zone: LightingZone, mood: str) -> Effect:

@@ -6,6 +6,7 @@ import signal
 import sys
 from logging.handlers import RotatingFileHandler
 
+from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
@@ -82,12 +83,16 @@ def main(argv: list[str] | None = None) -> int:
     tray = Tray(prism.client, show_window, quit_app) if has_tray else None
     if tray is not None:
         tray.show()
-    app.aboutToQuit.connect(prism.loop.stop)
     signal.signal(signal.SIGINT, lambda *_: quit_app())
     signal.signal(signal.SIGTERM, lambda *_: quit_app())
+    wake_for_signals = QTimer(interval=200)
+    wake_for_signals.timeout.connect(lambda: None)
+    wake_for_signals.start()
     prism.loop.start()
-    if not (args.hidden or prism.settings.start_hidden) or tray is None:
-        show_window()
-    status = app.exec()
-    server.close()
-    return status
+    try:
+        if not (args.hidden or prism.settings.start_hidden) or tray is None:
+            show_window()
+        return app.exec()
+    finally:
+        prism.loop.stop()
+        server.close()

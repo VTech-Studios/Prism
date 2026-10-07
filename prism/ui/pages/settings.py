@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QHBoxLayout, QSpinBox, QVBoxLayout, QWidget
 from ...domain.errors import PrismError
 from ...domain.settings import Settings
 from ...ports import DetectorSwitch
-from ...services.core import PrismState
+from ...services.state import PrismState
 from ..client import PrismClient
 from ..widgets.basics import Card, Toggle, button, label
 from .base import Page

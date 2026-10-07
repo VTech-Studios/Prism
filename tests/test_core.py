@@ -9,9 +9,12 @@ from prism.domain.cooling import FanSetting
 from prism.domain.effects import Effect
 from prism.domain.errors import DeviceError, ValidationError
 from prism.domain.profile import Profile
+from prism.domain.rendering import Frame
 from prism.domain.settings import Settings
-from prism.services.core import PrismCore, PrismState
+from prism.services.core import PrismCore
 from prism.services.loop import RuntimeLoop
+from prism.services.state import PrismState
+from tests.fakes import FakeLights, zone
 from tests.rig import Rig
 
 RED = Effect.static(Color(255, 0, 0))
@@ -43,8 +46,8 @@ def test_ticks_measure_and_drive_fans() -> None:
     state = rig.core.state()
     assert state.readings == {"cpu.temp": 40.0, "cpu.load": 10.0}
     assert state.speeds == {"fan1": 1000, "fan2": 1000}
-    assert state.duties == {"fan1": 55}
-    assert rig.fans.duties == {"fan1": 55}
+    assert state.duties == {"fan1": 55, "fan2": 35}
+    assert rig.fans.duties == {"fan1": 55, "fan2": 35}
 
 
 def test_choosing_and_editing_profiles_applies_them() -> None:
@@ -184,3 +187,60 @@ def test_the_loop_runs_commands_publishes_state_and_reports_refusals() -> None:
     loop.stop()
     assert rig.fans.closed
     assert notices == ["there is no profile called 'Nope'", "Something went wrong; see the log for details"]
+
+
+class Exploding(FakeLights):
+    """Lights whose driver fails in a way nobody planned for."""
+
+    def draw(self, zone_id: str, frame: Frame) -> None:
+        raise RuntimeError("driver bug")
+
+    def play(self, zone_id: str, effect: Effect) -> None:
+        raise RuntimeError("driver bug")
+
+
+def test_a_broken_lighting_driver_never_stops_the_fans() -> None:
+    lights = Exploding(zones=[zone("fans")])
+    rig = Rig([Profile("A", lighting={"fans": RED}, cooling={"fan1": FanSetting.fixed(70)})], lights=lights)
+    rig.core.start()
+    rig.advance(1)
+    assert rig.fans.duties["fan1"] == 70
+    assert rig.core.state().showing == "A"
+
+
+def test_waking_from_suspend_resends_everything() -> None:
+    rig = Rig([Profile("A").with_effect("fans", RED)])
+    rig.core.start()
+    rig.advance(1)
+    played, written = len(rig.lights.played), len(rig.fans.history)
+    rig.sleep.slept = True
+    rig.advance(1)
+    assert len(rig.lights.played) == played + 1
+    assert len(rig.fans.history) > written
+
+
+def test_editing_fans_does_not_restart_the_lighting() -> None:
+    rig = Rig([Profile("A").with_effect("fans", RED)])
+    rig.core.start()
+    played = len(rig.lights.played)
+    rig.core.edit_chosen(lambda profile: profile.with_fan("fan1", FanSetting.fixed(80)))
+    assert len(rig.lights.played) == played
+    rig.core.edit_chosen(lambda profile: profile.with_effect("fans", BLUE))
+    assert rig.lights.played[-1] == ("fans", BLUE)
+
+
+def test_the_loop_still_hands_off_the_fans_when_publishing_fails() -> None:
+    rig = Rig([Profile("A")])
+    loop = RuntimeLoop(rig.core)
+    published = threading.Event()
+
+    def broken(state: PrismState) -> None:
+        published.set()
+        raise RuntimeError("listener bug")
+
+    loop.subscribe(broken)
+    loop.start()
+    assert published.wait(5)
+    loop.stop()
+    assert rig.fans.closed
+    assert rig.fans.duties == {"fan1": 50, "fan2": 50}

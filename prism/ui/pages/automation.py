@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from ...domain.automation import Condition, ProcessRunning, ReadingAbove, Rule
 from ...domain.errors import ValidationError
-from ...services.core import PrismState
+from ...services.state import PrismState
 from ..client import PrismClient
 from ..widgets.basics import Card, Toggle, button, label
 from .base import Page, clear, sensor_unit

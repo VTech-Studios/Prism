@@ -6,10 +6,9 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QHBoxLayout, QSlider, QVBoxLayout, QWidget
 
-from ...domain.cooling import PRESET_CURVES, FanCurve, FanMode, FanSetting, PumpMode
+from ...domain.cooling import LIQUID_CURVES, PRESET_CURVES, FanCurve, FanMode, FanSetting, PumpMode
 from ...domain.devices import FanChannel
-from ...services.core import PrismState
-from ...services.presets import LIQUID_CURVES
+from ...services.state import PrismState
 from ..client import PrismClient
 from ..theme import Palette
 from ..widgets.basics import Card, Segmented, button, label

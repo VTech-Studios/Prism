@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ..services.core import PrismState
+from ..services.state import PrismState
 from .client import PrismClient
 from .icons import app_icon, nav_icon
 from .pages.base import Page

@@ -3,7 +3,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QLayout, QScrollArea, QVBoxLayout, QWidget
 
-from ...services.core import PrismState
+from ...services.state import PrismState
 from ..widgets.basics import label
 
 

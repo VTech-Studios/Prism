@@ -1,64 +1,34 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field, replace
+import logging
+from collections.abc import Callable
+from dataclasses import replace
 
 from ..domain.automation import Rule
-from ..domain.devices import DeviceStatus, FanChannel, LightingZone, Sensor
 from ..domain.profile import Profile
 from ..domain.settings import Settings
-from ..ports import Autostart, SettingsStore
+from ..ports import Autostart, SettingsStore, SleepWatch
 from .automation import AutomationService
 from .cooling import CoolingController
 from .lighting import LightingEngine
 from .presets import starter_profiles
 from .profiles import ProfileLibrary
 from .registry import DeviceRegistry
+from .state import PrismState
 from .telemetry import Sample, Telemetry
 
 SAMPLE_INTERVAL = 1.0
 RECONNECT_INTERVAL = 10.0
 
-
-@dataclass(frozen=True, slots=True)
-class PrismState:
-    """A consistent picture of everything the window shows, published after each change.
-
-    @ivar chosen: the profile the user picked.
-    @ivar showing: the profile actually applied, which a rule may have switched to.
-    @ivar rule: the name of the rule in charge, if any.
-    @ivar drawn: zones Prism draws itself, rather than the device playing the effect.
-    @ivar has_pump: whether an AIO pump is connected.
-    @ivar notice: the latest message for the user, paired with a counter so repeats still show.
-    """
-
-    settings: Settings
-    profiles: tuple[Profile, ...]
-    chosen: str
-    showing: str
-    rule: str | None
-    rules: tuple[Rule, ...]
-    zones: tuple[LightingZone, ...]
-    fans: tuple[FanChannel, ...]
-    sensors: tuple[Sensor, ...]
-    readings: Mapping[str, float]
-    speeds: Mapping[str, int]
-    duties: Mapping[str, int]
-    statuses: tuple[DeviceStatus, ...]
-    drawn: frozenset[str]
-    has_pump: bool
-    autostart: bool
-    notice: tuple[int, str] | None = field(default=None)
-
-    def profile(self, name: str) -> Profile | None:
-        """@return: the named profile, or None if it no longer exists."""
-        return next((profile for profile in self.profiles if profile.name == name), None)
+_LOG = logging.getLogger(__name__)
 
 
 class PrismCore:
     """Runs the show: applies profiles, follows rules, drives fans and keeps devices connected.
 
     Every method runs on one thread, the runtime loop's, so nothing here needs locking.
+    Each step of a tick is isolated from the others, so a fault in lighting or a
+    sensor can never stop the fans being driven.
     """
 
     def __init__(
@@ -72,6 +42,7 @@ class PrismCore:
         automation: AutomationService,
         settings_store: SettingsStore,
         autostart: Autostart,
+        sleep: SleepWatch,
         clock: Callable[[], float],
     ) -> None:
         self._registry = registry
@@ -82,6 +53,7 @@ class PrismCore:
         self._automation = automation
         self._settings_store = settings_store
         self._autostart = autostart
+        self._sleep = sleep
         self._clock = clock
         self._settings = settings_store.load()
         self._showing = ""
@@ -111,19 +83,20 @@ class PrismCore:
     def tick(self) -> None:
         """Draw the next lighting frame, and once a second measure, follow rules and drive the fans."""
         now = self._clock()
-        if now >= self._next_reconnect:
-            self._next_reconnect = now + RECONNECT_INTERVAL
-            self._registry.connect_offline()
-        self._sync_devices()
+        self._isolated("reconnecting devices", lambda: self._reconnect(now))
+        self._isolated("resyncing devices", self._sync_devices)
         if now >= self._next_sample:
             self._next_sample = now + SAMPLE_INTERVAL
-            self._measure(now)
-        self._lighting.tick(now, self._sample.snapshot.readings)
+            self._isolated("measuring", lambda: self._measure(now))
+            self._isolated(
+                "driving the fans", lambda: self._cooling.tick(self._sample.snapshot.readings, now)
+            )
+        self._isolated("drawing lighting", lambda: self._lighting.tick(now, self._sample.snapshot.readings))
 
     def shutdown(self) -> None:
-        """Leave the fans at the exit duty and release every device."""
-        self._cooling.hand_off(self._settings.handoff_duty)
-        self._registry.close()
+        """Leave the fans at the exit duty and release every device, even if one step fails."""
+        self._isolated("handing off the fans", lambda: self._cooling.hand_off(self._settings.handoff_duty))
+        self._isolated("closing devices", self._registry.close)
 
     def notify(self, message: str) -> None:
         """Show the user a message, such as why a command was refused.
@@ -153,6 +126,13 @@ class PrismCore:
         if profile.name == self._showing:
             self._show(profile.name, force=True)
         self.changed = True
+
+    def edit_chosen(self, change: Callable[[Profile], Profile]) -> None:
+        """Change whichever profile is chosen at the moment the edit runs.
+
+        @param change: makes the edited profile from the current one.
+        """
+        self.edit_profile(self._settings.active_profile, change)
 
     def edit_profile(self, name: str, change: Callable[[Profile], Profile]) -> None:
         """Change a profile based on its latest saved version, so quick edits never undo each other.
@@ -258,8 +238,23 @@ class PrismCore:
             notice=self._notice,
         )
 
+    def _reconnect(self, now: float) -> None:
+        """Retry offline devices now and then, and reopen everything after the machine wakes.
+
+        Devices come back from suspend in their power-on state, so after a
+        wake every device is reopened and given its settings again.
+
+        @param now: the monotonic time.
+        """
+        if self._sleep.woke():
+            _LOG.info("woke from suspend, reopening every device")
+            self._registry.reopen()
+        if now >= self._next_reconnect:
+            self._next_reconnect = now + RECONNECT_INTERVAL
+            self._registry.connect_offline()
+
     def _measure(self, now: float) -> None:
-        """Take a sample, let the rules pick a profile, and drive the fans.
+        """Take a sample and let the rules pick a profile.
 
         @param now: the monotonic time.
         """
@@ -269,8 +264,18 @@ class PrismCore:
                 self._sample.snapshot, now, self._settings.active_profile, self._library.names()
             )
             self._show(target)
-        self._cooling.tick(self._sample.snapshot.readings)
         self.changed = True
+
+    def _isolated(self, step: str, action: Callable[[], object]) -> None:
+        """Run one step of a tick, logging any failure instead of letting it stop the next step.
+
+        @param step: what the step does, for the log.
+        @param action: the step.
+        """
+        try:
+            action()
+        except Exception:
+            _LOG.exception("failed while %s", step)
 
     def _show(self, name: str, force: bool = False) -> None:
         """Apply a profile to every device.
@@ -281,17 +286,17 @@ class PrismCore:
         if name == self._showing and not force:
             return
         profile = self._library.get(name)
-        self._showing = name
-        self._lighting.show(profile.lighting)
         self._cooling.apply(profile.cooling, profile.pump)
+        self._isolated("showing lighting", lambda: self._lighting.show(profile.lighting))
+        self._showing = name
         self.changed = True
 
     def _sync_devices(self) -> None:
         """Resend everything after a device connects or drops off."""
         if self._registry.generation != self._generation:
             self._generation = self._registry.generation
-            self._lighting.refresh()
             self._cooling.refresh()
+            self._isolated("resending lighting", self._lighting.refresh)
             self.changed = True
 
     def _update_settings(self, settings: Settings) -> None:

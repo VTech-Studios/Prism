@@ -7,8 +7,8 @@ from PySide6.QtCore import QObject, Signal
 from ..domain.automation import Rule
 from ..domain.profile import Profile
 from ..domain.settings import Settings
-from ..services.core import PrismState
 from ..services.loop import Command
+from ..services.state import PrismState
 
 
 class PrismClient(QObject):
@@ -47,9 +47,11 @@ class PrismClient(QObject):
         self._submit(lambda core: core.edit_profile(name, change))
 
     def edit_chosen(self, change: Callable[[Profile], Profile]) -> None:
-        """@param change: makes the edited profile from the chosen one."""
-        if self.state is not None:
-            self.edit_profile(self.state.chosen, change)
+        """Edit the chosen profile, resolved on the runtime thread so a profile switch in flight is respected.
+
+        @param change: makes the edited profile from the chosen one.
+        """
+        self._submit(lambda core: core.edit_chosen(change))
 
     def create_profile(self, name: str) -> None:
         """@param name: the new profile's name."""

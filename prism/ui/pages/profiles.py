@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QFileDialog, QGridLayout, QHBoxLayout, QInputDialo
 from ...domain.errors import PrismError
 from ...domain.profile import Profile
 from ...ports import ProfileFiles
-from ...services.core import PrismState
+from ...services.state import PrismState
 from ..client import PrismClient
 from ..widgets.basics import Card, button, label
 from .base import Page, clear

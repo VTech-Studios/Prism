@@ -200,6 +200,15 @@ class DetectorSwitch(Protocol):
         ...
 
 
+class SleepWatch(Protocol):
+    def woke(self) -> bool:
+        """Say whether the machine has been suspended since the last call.
+
+        @return: True once after each resume.
+        """
+        ...
+
+
 class Autostart(Protocol):
     def enabled(self) -> bool:
         """@return: whether Prism starts when the user logs in."""

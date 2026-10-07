@@ -20,7 +20,7 @@ from ...domain.color import Color
 from ...domain.devices import LightingZone
 from ...domain.effects import Direction, Effect, EffectKind, Gauge, Speed
 from ...domain.rendering import Renderer
-from ...services.core import PrismState
+from ...services.state import PrismState
 from ..client import PrismClient
 from ..theme import Palette
 from ..widgets.basics import Card, Segmented, Swatch, button, label

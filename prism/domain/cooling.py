@@ -124,6 +124,15 @@ PRESET_CURVES: Mapping[str, FanCurve] = {
 }
 
 
+LIQUID_CURVES: Mapping[str, FanCurve] = {
+    "Quiet": FanCurve.of([(25, 25), (32, 35), (38, 60), (44, 100)]),
+    "Balanced": FanCurve.of([(25, 30), (30, 40), (35, 65), (40, 90), (44, 100)]),
+    "Performance": FanCurve.of([(25, 50), (30, 65), (35, 85), (40, 100)]),
+}
+
+FALLBACK = FanSetting.following("cpu.temp", PRESET_CURVES["Balanced"])
+
+
 class PumpMode(StrEnum):
     QUIET = "quiet"
     BALANCED = "balanced"
